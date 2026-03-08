@@ -75,18 +75,57 @@ export function transformComponentForPreview(source: string) {
   throw new Error("Unable to prepare the generated component for preview.");
 }
 
-export function buildPreviewDocument(source: string, previewId: string) {
+function resolveViewportSize(viewport?: { width?: number; height?: number }) {
+  const width = viewport?.width ?? 0;
+  const height = viewport?.height ?? 0;
+
+  if (!width || !height) {
+    return { width: 1440, height: 900 };
+  }
+
+  const aspectRatio = width / height;
+
+  if (aspectRatio <= 0.82) {
+    const resolvedWidth = 430;
+    return {
+      width: resolvedWidth,
+      height: Math.round(resolvedWidth / aspectRatio),
+    };
+  }
+
+  if (aspectRatio <= 1.15) {
+    const resolvedWidth = 1024;
+    return {
+      width: resolvedWidth,
+      height: Math.round(resolvedWidth / aspectRatio),
+    };
+  }
+
+  const resolvedWidth = 1440;
+  return {
+    width: resolvedWidth,
+    height: Math.round(resolvedWidth / aspectRatio),
+  };
+}
+
+export function buildPreviewDocument(
+  source: string,
+  previewId: string,
+  viewport?: { width?: number; height?: number },
+) {
   const executableSource = escapeClosingScriptTag(
     transformComponentForPreview(source),
   );
   const serializedPreviewId = JSON.stringify(previewId);
+  const resolvedViewport = resolveViewportSize(viewport);
+  const serializedViewport = JSON.stringify(resolvedViewport);
 
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -95,9 +134,14 @@ export function buildPreviewDocument(source: string, previewId: string) {
         box-sizing: border-box;
       }
 
+      html,
       body {
         margin: 0;
-        min-height: 100vh;
+        width: 100%;
+        height: 100%;
+      }
+
+      body {
         background:
           radial-gradient(circle at top, rgba(51, 65, 85, 0.35), transparent 30%),
           linear-gradient(180deg, #020617 0%, #0f172a 100%);
@@ -110,12 +154,12 @@ export function buildPreviewDocument(source: string, previewId: string) {
         min-height: 100vh;
         align-items: stretch;
         justify-content: center;
-        padding: 28px;
+        padding: 20px;
       }
 
       .browser {
         width: 100%;
-        max-width: 1400px;
+        max-width: 1500px;
         overflow: hidden;
         border: 1px solid rgba(148, 163, 184, 0.14);
         border-radius: 22px;
@@ -152,14 +196,25 @@ export function buildPreviewDocument(source: string, previewId: string) {
       }
 
       .page-shell {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        min-height: calc(100vh - 53px);
+        overflow: hidden;
         padding: 18px;
         background:
           radial-gradient(circle at top, rgba(51, 65, 85, 0.18), transparent 28%),
           linear-gradient(180deg, #0f172a 0%, #020617 100%);
       }
 
+      .fit-shell {
+        flex: 0 0 auto;
+        transform-origin: top center;
+      }
+
       .page-canvas {
-        min-height: calc(100vh - 140px);
+        width: 100%;
+        height: 100%;
         padding: 16px;
         border: 1px solid rgba(148, 163, 184, 0.12);
         border-radius: 24px;
@@ -170,7 +225,7 @@ export function buildPreviewDocument(source: string, previewId: string) {
 
       .component-stage {
         width: 100%;
-        min-height: calc(100vh - 184px);
+        height: 100%;
         overflow: hidden;
         border: 1px solid rgba(148, 163, 184, 0.14);
         border-radius: 28px;
@@ -182,12 +237,12 @@ export function buildPreviewDocument(source: string, previewId: string) {
 
       .component-stage > * {
         width: 100%;
-        min-height: calc(100vh - 184px);
+        height: 100%;
       }
 
       .preview-polish {
         width: 100%;
-        min-height: calc(100vh - 184px);
+        min-height: 100%;
         background:
           radial-gradient(circle at top, rgba(71, 85, 105, 0.18), transparent 26%),
           linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
@@ -196,7 +251,7 @@ export function buildPreviewDocument(source: string, previewId: string) {
 
       .preview-polish > * {
         width: 100%;
-        min-height: calc(100vh - 184px);
+        min-height: 100%;
       }
 
       :where(.preview-polish h1, .preview-polish h2, .preview-polish h3, .preview-polish h4) {
@@ -238,13 +293,16 @@ export function buildPreviewDocument(source: string, previewId: string) {
           <span class="dot"></span>
           <div class="address">generated-site.local</div>
         </div>
-        <div class="page-shell">
-          <div id="root" class="page-canvas"></div>
+        <div class="page-shell" id="page-shell">
+          <div class="fit-shell" id="fit-shell">
+            <div id="root" class="page-canvas"></div>
+          </div>
         </div>
       </div>
     </div>
     <script>
       const previewId = ${serializedPreviewId};
+      const simulatedViewport = ${serializedViewport};
       const report = (type, payload = {}) => {
         window.parent.postMessage(
           { source: "wireframe-preview", previewId, type, payload },
@@ -256,6 +314,29 @@ export function buildPreviewDocument(source: string, previewId: string) {
           message: event.error?.message || event.message || "Preview failed.",
         });
       });
+
+      const fitShell = document.getElementById("fit-shell");
+      const pageShell = document.getElementById("page-shell");
+
+      const applyViewportFit = () => {
+        if (!fitShell || !pageShell) {
+          return;
+        }
+
+        const availableWidth = Math.max(pageShell.clientWidth - 24, 320);
+        const availableHeight = Math.max(pageShell.clientHeight - 24, 320);
+        const scale = Math.min(
+          availableWidth / simulatedViewport.width,
+          availableHeight / simulatedViewport.height,
+          1,
+        );
+
+        fitShell.style.width = simulatedViewport.width + "px";
+        fitShell.style.height = simulatedViewport.height + "px";
+        fitShell.style.transform = "scale(" + scale + ")";
+      };
+
+      window.addEventListener("resize", applyViewportFit);
     </script>
     <script type="text/babel" data-presets="react">
       try {
@@ -273,6 +354,10 @@ ${executableSource}
             </div>
           </div>,
         );
+        requestAnimationFrame(() => {
+          applyViewportFit();
+          requestAnimationFrame(applyViewportFit);
+        });
         report("ready");
       } catch (error) {
         report("error", {

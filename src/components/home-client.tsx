@@ -3,7 +3,10 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 
 import { PreviewFrame } from "@/components/preview-frame";
-import { extractImageFileFromClipboardData } from "@/lib/image";
+import {
+  extractImageFileFromClipboardData,
+  readImageDimensions,
+} from "@/lib/image";
 import type {
   GenerationResult,
   GenerationStatus,
@@ -22,12 +25,17 @@ const STATUS_LABELS: Record<GenerationStatus, string> = {
 
 function createSelection(
   file: File,
+  previewUrl: string,
   source: ImageSelection["source"],
+  imageWidth: number,
+  imageHeight: number,
 ): ImageSelection {
   return {
     file,
-    previewUrl: URL.createObjectURL(file),
+    previewUrl,
     source,
+    imageWidth,
+    imageHeight,
   };
 }
 
@@ -38,20 +46,42 @@ export function HomeClient() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectionRequestRef = useRef(0);
 
-  const replaceSelection = (file: File, source: ImageSelection["source"]) => {
-    setSelection((current) => {
-      if (current?.previewUrl) {
-        URL.revokeObjectURL(current.previewUrl);
+  const replaceSelection = async (
+    file: File,
+    source: ImageSelection["source"],
+  ) => {
+    const requestId = selectionRequestRef.current + 1;
+    selectionRequestRef.current = requestId;
+
+    const previewUrl = URL.createObjectURL(file);
+
+    try {
+      const { width, height } = await readImageDimensions(previewUrl);
+
+      if (selectionRequestRef.current !== requestId) {
+        URL.revokeObjectURL(previewUrl);
+        return;
       }
 
-      return createSelection(file, source);
-    });
+      setSelection((current) => {
+        if (current?.previewUrl) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
 
-    setStatus("ready");
-    setResult(null);
-    setError(null);
-    setCopied(false);
+        return createSelection(file, previewUrl, source, width, height);
+      });
+
+      setStatus("ready");
+      setResult(null);
+      setError(null);
+      setCopied(false);
+    } catch {
+      URL.revokeObjectURL(previewUrl);
+      setError("Unable to read the selected image.");
+      setStatus("error");
+    }
   };
 
   useEffect(() => {
@@ -70,7 +100,7 @@ export function HomeClient() {
       }
 
       event.preventDefault();
-      replaceSelection(file, "paste");
+      void replaceSelection(file, "paste");
     };
 
     window.addEventListener("paste", handlePaste);
@@ -92,7 +122,7 @@ export function HomeClient() {
       return;
     }
 
-    replaceSelection(file, "upload");
+    void replaceSelection(file, "upload");
     event.target.value = "";
   };
 
@@ -103,7 +133,7 @@ export function HomeClient() {
     }
 
     event.preventDefault();
-    replaceSelection(file, "paste");
+    void replaceSelection(file, "paste");
   };
 
   const clearSelection = () => {
@@ -320,7 +350,8 @@ export function HomeClient() {
                         </p>
                         <p>
                           {Math.max(1, Math.round(selection.file.size / 1024))}
-                          {" KB"}
+                          {" KB · "}
+                          {selection.imageWidth}x{selection.imageHeight}
                         </p>
                       </div>
                     </div>
@@ -374,8 +405,8 @@ export function HomeClient() {
         </section>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
-        <div className="shadow-panel rounded-[1.75rem] border border-line bg-panel px-5 py-6 md:px-6">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_360px]">
+        <div className="min-w-0 shadow-panel rounded-[1.75rem] border border-line bg-panel px-5 py-6 md:px-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
@@ -398,7 +429,13 @@ export function HomeClient() {
 
           <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-white/8 bg-[#020617]">
             {result ? (
-              <PreviewFrame code={result.componentCode} />
+              <PreviewFrame
+                code={result.componentCode}
+                viewport={{
+                  width: selection?.imageWidth,
+                  height: selection?.imageHeight,
+                }}
+              />
             ) : (
               <div className="p-5">
                 <div className="overflow-hidden rounded-[1.25rem] border border-white/10 bg-[#0b1120]">
@@ -428,7 +465,7 @@ export function HomeClient() {
           </div>
         </div>
 
-        <div className="grid gap-6">
+        <div className="grid gap-6 xl:w-[360px]">
           <section className="shadow-panel rounded-[1.75rem] border border-line bg-panel px-5 py-6 md:px-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
               Layout summary

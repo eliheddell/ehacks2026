@@ -17,4 +17,6 @@ export type ImageSelection = {
   file: File;
   previewUrl: string;
   source: "upload" | "paste";
+  imageWidth: number;
+  imageHeight: number;
 };

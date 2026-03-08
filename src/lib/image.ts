@@ -59,3 +59,19 @@ export function extractImageFileFromClipboardData(
 
   return null;
 }
+
+export function readImageDimensions(src: string) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth || image.width,
+        height: image.naturalHeight || image.height,
+      });
+    };
+
+    image.onerror = () => reject(new Error("Unable to read image dimensions."));
+    image.src = src;
+  });
+}

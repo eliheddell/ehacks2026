@@ -18,10 +18,13 @@ describe("buildPreviewDocument", () => {
     const document = buildPreviewDocument(
       `export default function MockupPage() { return <div className="p-8">Hello</div>; }`,
       "preview-id",
+      { width: 1600, height: 900 },
     );
 
     assert.match(document, /generated-site\.local/u);
     assert.match(document, /browser-bar/u);
     assert.match(document, /page-canvas/u);
+    assert.match(document, /fit-shell/u);
+    assert.match(document, /@tailwindcss\/browser@4/u);
   });
 });

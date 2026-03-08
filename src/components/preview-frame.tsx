@@ -6,9 +6,13 @@ import { buildPreviewDocument } from "@/lib/preview";
 
 type PreviewFrameProps = {
   code: string;
+  viewport?: {
+    width?: number;
+    height?: number;
+  };
 };
 
-export function PreviewFrame({ code }: PreviewFrameProps) {
+export function PreviewFrame({ code, viewport }: PreviewFrameProps) {
   const previewId = useId();
   const [previewState, setPreviewState] = useState<{
     code: string;
@@ -63,9 +67,9 @@ export function PreviewFrame({ code }: PreviewFrameProps) {
         </div>
       ) : null}
       <iframe
-        className="min-h-[34rem] w-full bg-[#020617]"
+        className="min-h-[42rem] w-full bg-[#020617]"
         sandbox="allow-scripts"
-        srcDoc={buildPreviewDocument(code, previewId)}
+        srcDoc={buildPreviewDocument(code, previewId, viewport)}
         title="Generated component preview"
       />
     </div>
